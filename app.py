@@ -471,7 +471,7 @@ def main():
             
             # Process the resized image
             processed_image = apply_all_effects(resized_image, controls)
-            st.image(processed_image, caption="Your Edited Image", use_container_width=True)
+            st.image(processed_image, caption="Your Edited Image", width="stretch")
             
             # Render download button
             render_download_button(processed_image)
