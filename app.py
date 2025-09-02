@@ -2,7 +2,7 @@ import streamlit as st
 from PIL import Image, ImageEnhance, ImageChops, ImageFilter
 import numpy as np
 import io
-import pillow_heif # Import the new library
+import pillow_heif
 
 # --- CONFIG & PRESETS ---
 st.set_page_config(layout="centered", page_title="Brave Pink & Hero Green Editor")
@@ -19,7 +19,6 @@ OVERLAY_FILES = {
     "Light Leak 1": "light_leak_1.png", "Light Leak 2": "light_leak_2.png", "Light Leak 3": "light_leak_3.png",
     "Dust 1": "dust_1.png", "Dust 2": "dust_2.png", "Scratches": "scratches_1.png"
 }
-# --- CHANGED: A more conservative max dimension for mobile reliability ---
 MAX_DIMENSION = 1920
 
 # --- HELPER & UTILITY FUNCTIONS ---
@@ -32,18 +31,11 @@ def calculate_dimensions(width, height):
     scale = MAX_DIMENSION / max(width, height)
     return int(width * scale), int(height * scale)
 
-# --- NEW: Function to safely load and convert HEIC files ---
 def load_image(image_file):
-    """Safely loads an image, converting HEIC/HEIF to a usable format."""
     if image_file.type in ["image/heic", "image/heif"]:
         try:
             heif_file = pillow_heif.read_heif(image_file)
-            image = Image.frombytes(
-                heif_file.mode,
-                heif_file.size,
-                heif_file.data,
-                "raw",
-            )
+            image = Image.frombytes(heif_file.mode, heif_file.size, heif_file.data, "raw")
             return image
         except Exception as e:
             st.error(f"Error converting HEIC file: {e}")
@@ -51,9 +43,9 @@ def load_image(image_file):
     else:
         return Image.open(image_file)
 
-# (All 'apply_' functions remain exactly the same)
+# --- IMAGE PROCESSING ENGINES ---
 def apply_all_effects(image, controls):
-    processed_image = image # No copy needed here as it's already a resized copy
+    processed_image = image
     enhancer = ImageEnhance.Brightness(processed_image)
     processed_image = enhancer.enhance(1.0 + controls["brightness"] / 100.0)
     enhancer = ImageEnhance.Color(processed_image)
@@ -66,6 +58,7 @@ def apply_all_effects(image, controls):
     if controls["overlay_style"] != "None": processed_image = apply_overlay(processed_image, controls["overlay_style"], controls["overlay_strength"])
     if controls["film_grain"] > 0: processed_image = apply_film_grain(processed_image, controls["film_grain"])
     return processed_image
+
 def apply_clarity(image, strength):
     clarity_percent = int(strength * 2.5)
     return image.filter(ImageFilter.UnsharpMask(radius=5, percent=clarity_percent, threshold=3))
@@ -129,16 +122,16 @@ def apply_overlay(base_image, overlay_style, strength):
     alpha = strength / 100.0
     return Image.blend(base_image_rgb, screen_blended, alpha)
 
-# (Session state and UI sections are unchanged, they are already perfect)
+# --- INITIALIZE SESSION STATE & UI ---
 if 'controls_initialized' not in st.session_state:
     st.session_state.update({"duotone_filter_name": "Hero Green & Brave Pink", "duotone_contrast": 1.8, "invert_duotone": False, "brightness": 0, "saturation": 100, "clarity": 0, "shadow_cleanup": 0, "enable_split_toning": False, "shadow_tint": "#0000FF", "highlight_tint": "#FFA500", "split_toning_strength": 50, "vignette": 0, "film_grain": 0, "overlay_style": "None", "overlay_strength": 75, "h_flip": False, "v_flip": False, "controls_initialized": True})
 def reset_duotone_controls(): st.session_state.update(duotone_filter_name="Hero Green & Brave Pink", duotone_contrast=1.8, invert_duotone=False)
 def reset_image_adjustments(): st.session_state.update(brightness=0, saturation=100, shadow_cleanup=0, clarity=0)
 def reset_advanced_color_grading(): st.session_state.update(enable_split_toning=False, shadow_tint="#0000FF", highlight_tint="#FFA500", split_toning_strength=50)
 def reset_stylistic_effects(): st.session_state.update(vignette=0, film_grain=0, overlay_style="None", overlay_strength=75)
+
 st.markdown("""<style>.title{text-align:center;}.subtitle{text-align:center;}.footer{text-align:center;color:#888;}</style><h1 class="title">Brave Pink & Hero Green Editor</h1><p class="subtitle">Transform your photos with beautiful duotone effects. Local & private.</p>""", unsafe_allow_html=True)
 st.sidebar.header("Controls")
-controls = {}
 with st.sidebar.expander("Duotone Filter", expanded=True):
     st.selectbox("Filter Preset", ["None"] + list(FILTER_PRESETS.keys()), key="duotone_filter_name")
     st.slider("Filter Contrast", 1.0, 4.0, key="duotone_contrast", step=0.1)
@@ -168,43 +161,34 @@ col1, col2 = st.sidebar.columns(2)
 flip_horizontal_button = col1.button("Flip Horizontal", use_container_width=True)
 flip_vertical_button = col2.button("Flip Vertical", use_container_width=True)
 
-# --- CHANGED: Updated file uploader to accept new formats ---
-uploaded_file = st.file_uploader(
-    "Drop your image here or click to browse", 
-    type=["jpg", "jpeg", "png", "webp", "heic", "heif"]
-)
+uploaded_file = st.file_uploader("Drop your image here or click to browse", type=["jpg", "jpeg", "png", "webp", "heic", "heif"])
 
 if uploaded_file is not None:
-    # --- CHANGED: New, robust image loading and resizing logic ---
     original_image = load_image(uploaded_file)
-    
-    if original_image: # Check if loading was successful
-        # Handle flips
+    if original_image:
         if 'h_flip' not in st.session_state: st.session_state.h_flip = False
         if 'v_flip' not in st.session_state: st.session_state.v_flip = False
         if flip_horizontal_button: st.session_state.h_flip = not st.session_state.h_flip
         if flip_vertical_button: st.session_state.v_flip = not st.session_state.v_flip
-        
         if st.session_state.h_flip: original_image = original_image.transpose(Image.FLIP_LEFT_RIGHT)
         if st.session_state.v_flip: original_image = original_image.transpose(Image.FLIP_TOP_BOTTOM)
-        
-        # --- NEW: Aggressive resizing happens immediately after loading ---
         new_width, new_height = calculate_dimensions(original_image.width, original_image.height)
         resized_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
-        # Get control values from session state
-        for key in st.session_state: controls[key] = st.session_state[key]
-        
-        # Process the resized image
+        controls = {key: value for key, value in st.session_state.items()}
         processed_image = apply_all_effects(resized_image, controls)
         st.image(processed_image, caption="Your Edited Image", use_container_width=True)
-        
-        # Download button
         buf = io.BytesIO()
         processed_image.save(buf, format="PNG")
         byte_im = buf.getvalue()
         _, col2, _ = st.columns([1, 2, 1])
-        with col2: st.download_button("Download Edited Image", byte_im, "edited_image.png", "image/png", use_container_width=True)
+        with col2:
+            st.download_button(
+                label="Download Edited Image",
+                data=byte_im,
+                file_name="edited_image.png",
+                mime="image/png",
+                width='stretch'
+            )
 else:
     st.session_state.h_flip = False
     st.session_state.v_flip = False
